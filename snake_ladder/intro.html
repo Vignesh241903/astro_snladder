@@ -1,0 +1,288 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>ASTRO – Beyond the Ordinary</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Syncopate:wght@700&family=Manrope:wght@300;500&display=swap" rel="stylesheet">
+<style>
+:root{--ink:#e9f0fb;--glow:90,150,255}
+*{box-sizing:border-box;margin:0}
+html,body{height:100%;background:#000;color:var(--ink);overflow:hidden;font-family:'Manrope',system-ui,sans-serif}
+#c{position:fixed;inset:0;width:100%;height:100%;display:block;opacity:0;transition:opacity 2.2s ease}
+#c.on{opacity:1}
+#veil{position:fixed;inset:0;pointer-events:none;background:radial-gradient(ellipse at center,transparent 60%,rgba(0,0,0,.45))}
+#ui{position:fixed;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:flex-end;opacity:0;padding:0 5vw max(11vh,60px);pointer-events:none}
+.ld{width:min(440px,72vw)}
+.row{display:flex;justify-content:space-between;align-items:baseline;margin-bottom:12px}
+.label{font-weight:500;font-size:clamp(10px,1vw,12px);letter-spacing:.45em;color:#bcd3f5}
+#pct{font-family:'Syncopate','Arial Black',sans-serif;font-weight:700;font-size:clamp(14px,1.5vw,18px);letter-spacing:.1em;color:#7fe6ff;font-variant-numeric:tabular-nums;text-shadow:0 0 12px rgba(80,200,255,.6)}
+#pct::after{content:'%'}
+/* cylinder (capsule) progress tube */
+.tube{position:relative;height:20px;border-radius:999px;overflow:hidden;border:1px solid rgba(160,200,255,.35);
+ background:linear-gradient(180deg,rgba(255,255,255,.14) 0%,rgba(10,20,40,.55) 45%,rgba(0,0,0,.65) 70%,rgba(255,255,255,.10) 100%);
+ box-shadow:inset 0 2px 5px rgba(0,0,0,.7),0 0 24px rgba(60,140,255,.25)}
+#fill{position:relative;height:100%;width:0;border-radius:999px;
+ background:linear-gradient(90deg,#2a6bff 0%,#27c6ff 55%,#b08cff 100%);box-shadow:0 0 18px rgba(60,190,255,.75)}
+#fill::after{content:'';position:absolute;left:4px;right:4px;top:2px;height:42%;border-radius:999px;background:linear-gradient(180deg,rgba(255,255,255,.55),rgba(255,255,255,0))}
+#brand{position:fixed;top:max(5vh,28px);left:0;right:0;text-align:center;pointer-events:none;animation:brandIn 2.2s .3s ease both}
+#brand h1{font-family:'Syncopate','Arial Black',sans-serif;font-weight:700;line-height:1;font-size:clamp(40px,8vw,104px);letter-spacing:.3em;margin-right:-.3em;
+ background:linear-gradient(180deg,#fff 0%,#c9d3e3 38%,#8d9ab0 52%,#eef3fa 70%,#aab6ca 100%);-webkit-background-clip:text;background-clip:text;color:transparent;-webkit-text-fill-color:transparent;
+ filter:drop-shadow(0 0 24px rgba(var(--glow),.4)) drop-shadow(0 2px 2px rgba(0,0,0,.6))}
+#brand p{font-weight:300;font-size:clamp(9px,1.1vw,14px);letter-spacing:.7em;margin:1.6vh -.7em 0 0;color:#d4deee;text-shadow:0 0 12px rgba(0,0,0,.8)}
+@keyframes brandIn{from{opacity:0;transform:translateY(-10px);filter:blur(6px)}to{opacity:1;transform:none;filter:none}}
+#skip{position:fixed;top:max(18px,env(safe-area-inset-top));right:max(20px,env(safe-area-inset-right));z-index:5;background:none;border:0;color:#8fa2bf;font:500 11px 'Manrope',sans-serif;letter-spacing:.35em;cursor:pointer;padding:10px;opacity:.75}
+#skip:hover{opacity:1;color:#fff}
+#flash{position:fixed;inset:0;z-index:9;pointer-events:none;opacity:0;background:radial-gradient(circle at 50% 50%,#fff 0%,#e8f2ff 35%,#a9ccff 100%)}
+@media (prefers-reduced-motion:reduce){#c{transition:none}}
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+<div id="veil"></div>
+<main id="ui" role="status">
+  <div class="ld">
+    <div class="row"><span class="label">LOADING</span><span id="pct">0</span></div>
+    <div class="tube"><div id="fill"></div></div>
+  </div>
+</main>
+<header id="brand">
+  <h1>ASTRO</h1>
+  <p>BEYOND THE ORDINARY</p>
+</header>
+<button id="skip" type="button">SKIP INTRO</button>
+<div id="flash"></div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.5/gsap.min.js"></script>
+<script>
+(function(){
+'use strict';
+const NEXT='index.html';
+const reduce=matchMedia('(prefers-reduced-motion: reduce)').matches;
+const $=id=>document.getElementById(id);
+const ui=$('ui'),flash=$('flash'),canvas=$('c');
+let busy=false,raf=0,ready=false,tl=null,cleaned=false;
+
+function go(){ if(cleaned)return; cleaned=true; cleanup(); try{sessionStorage.setItem('astroFlash','1')}catch(e){} location.replace(NEXT); }
+function quick(){ if(busy)return; busy=true; flash.style.transition='opacity .35s ease'; flash.style.opacity=1; setTimeout(go,380); }
+$('skip').addEventListener('click',e=>{e.stopPropagation();quick();});
+addEventListener('keydown',e=>{ if(e.key==='Escape')quick(); });
+
+/* ---------- fallbacks ---------- */
+let renderer;
+try{
+  if(!window.THREE||!window.gsap)throw 0;
+  renderer=new THREE.WebGLRenderer({canvas,antialias:false,powerPreference:'high-performance'});
+}catch(e){ renderer=null; }
+if(!renderer){ ui.style.opacity=1; startLoader(); return; }
+
+const mobile=innerWidth<700;
+const dpr=Math.min(devicePixelRatio||1,mobile?1.25:1.6);
+renderer.setPixelRatio(dpr); renderer.setSize(innerWidth,innerHeight,false); renderer.setClearColor(0x000000,1);
+const scene=new THREE.Scene();
+const cam=new THREE.PerspectiveCamera(60,innerWidth/innerHeight,.05,2000);
+scene.add(cam);
+
+/* ---------- shared GLSL ---------- */
+const NOISE=`float h(vec3 p){p=fract(p*.3183+.1);p*=17.;return fract(p.x*p.y*p.z*(p.x+p.y+p.z));}
+float n(vec3 x){vec3 i=floor(x),f=fract(x);f=f*f*(3.-2.*f);return mix(mix(mix(h(i),h(i+vec3(1,0,0)),f.x),mix(h(i+vec3(0,1,0)),h(i+vec3(1,1,0)),f.x),f.y),mix(mix(h(i+vec3(0,0,1)),h(i+vec3(1,0,1)),f.x),mix(h(i+vec3(0,1,1)),h(i+vec3(1,1,1)),f.x),f.y),f.z);}
+float fbm(vec3 p){float a=.5,s=0.;for(int i=0;i<5;i++){s+=a*n(p);p*=2.03;a*=.5;}return s;}`;
+
+/* ---------- galaxy ---------- */
+const g=()=>(Math.random()+Math.random()+Math.random()-1.5)/1.5;
+const R=30, ARMS=2, PITCH=.16;
+const om=r=>.4/(1+r*.012);
+function layer(n,fill){
+  const P=new Float32Array(n*3),C=new Float32Array(n*3),S=new Float32Array(n),Ph=new Float32Array(n),O=new Float32Array(n);
+  const o={};
+  for(let i=0;i<n;i++){ fill(i,o); P.set([o.x,o.y,o.z],i*3); C.set(o.c,i*3); S[i]=o.s; Ph[i]=Math.random(); O[i]=om(Math.hypot(o.x,o.z)); }
+  const geo=new THREE.BufferGeometry();
+  geo.setAttribute('position',new THREE.BufferAttribute(P,3));
+  geo.setAttribute('aCol',new THREE.BufferAttribute(C,3));
+  geo.setAttribute('aSize',new THREE.BufferAttribute(S,1));
+  geo.setAttribute('aPh',new THREE.BufferAttribute(Ph,1));
+  geo.setAttribute('aOm',new THREE.BufferAttribute(O,1));
+  return geo;
+}
+const U={uT:{value:0},uSpin:{value:0},uPx:{value:dpr},uScale:{value:300}};
+const starMat=(alpha,add,rot)=>new THREE.ShaderMaterial({
+  uniforms:{uT:U.uT,uSpin:U.uSpin,uPx:U.uPx,uScale:U.uScale,uAlpha:{value:alpha},uRot:{value:rot}},
+  vertexShader:`attribute vec3 aCol;attribute float aSize,aPh,aOm;uniform float uT,uSpin,uPx,uScale,uRot;varying vec3 vC;
+  void main(){float a=uSpin*aOm*uRot,c=cos(a),s=sin(a);vec3 p=vec3(c*position.x-s*position.z,position.y,s*position.x+c*position.z);
+  vec4 mv=modelViewMatrix*vec4(p,1.);float tw=.78+.22*sin(uT*(1.4+aPh*2.2)+aPh*60.);
+  gl_PointSize=clamp(aSize*uPx*uScale/-mv.z,1.,46.);gl_Position=projectionMatrix*mv;vC=aCol*tw;}`,
+  fragmentShader:`uniform float uAlpha;varying vec3 vC;
+  void main(){float r=length(gl_PointCoord-.5)*2.;if(r>1.)discard;float f=pow(1.-r,2.6);gl_FragColor=vec4(vC,f*uAlpha);}`,
+  transparent:true,depthWrite:false,blending:add?THREE.AdditiveBlending:THREE.NormalBlending});
+
+const warm=[1,.78,.5],mid=[.78,.86,1],blue=[.45,.6,1];
+const mixc=(a,b,t)=>[a[0]+(b[0]-a[0])*t,a[1]+(b[1]-a[1])*t,a[2]+(b[2]-a[2])*t];
+const NS=mobile?70000:170000;
+const stars=layer(NS,(i,o)=>{
+  let r,th,y,c,s=.05+Math.pow(Math.random(),4)*.45;
+  if(i<NS*.24){ // bulge
+    r=Math.pow(Math.random(),2)*7; const u=Math.random()*2-1,p=Math.random()*6.283,q=Math.sqrt(1-u*u);
+    o.x=r*q*Math.cos(p); o.z=r*q*Math.sin(p); o.y=r*u*.55;
+    c=mixc([1,.9,.7],warm,Math.min(1,r/7)); s*=1.1;
+  }else{
+    r=2+Math.pow(Math.random(),.75)*(R-2);
+    const arm=Math.floor(Math.random()*ARMS)*Math.PI*2/ARMS, onArm=Math.random()>.22;
+    th=arm+r*PITCH+(onArm?g()*.55*(1.15-r/40):Math.random()*6.283);
+    y=g()*(.22+1.5*Math.exp(-r/6));
+    o.x=Math.cos(th)*r; o.z=Math.sin(th)*r; o.y=y;
+    const t=r/R; c=t<.35?mixc(warm,mid,t/.35):mixc(mid,blue,(t-.35)/.65);
+    if(onArm&&r>8&&Math.random()<.014){c=[1,.45,.52];s=.28+Math.random()*.2;}
+    else if(Math.random()<.04) c=[.62,.5,.95];
+    c=c.map(v=>v*(1-.45*t));
+  }
+  const b=.45+Math.random()*.55; o.c=c.map(v=>v*b); o.s=Math.random()<.004?.8+Math.random()*.5:s;
+});
+const galaxy=new THREE.Group(); galaxy.rotation.set(1.02,0,.38); scene.add(galaxy);
+const mStars=starMat(1,true,1);
+galaxy.add(new THREE.Points(stars,mStars));
+
+const dust=layer(mobile?9000:24000,(i,o)=>{
+  const r=4+Math.pow(Math.random(),.8)*23, th=Math.floor(Math.random()*ARMS)*Math.PI*2/ARMS+r*PITCH+.24+g()*.1;
+  o.x=Math.cos(th)*r;o.z=Math.sin(th)*r;o.y=g()*.35;o.c=[.04,.025,.02];o.s=1.4+Math.random()*2.6;});
+const mDust=starMat(.15,false,1); const dustP=new THREE.Points(dust,mDust); dustP.renderOrder=2; galaxy.add(dustP);
+
+const haze=layer(mobile?3000:7000,(i,o)=>{
+  const r=6+Math.pow(Math.random(),.7)*26, th=Math.floor(Math.random()*ARMS)*Math.PI*2/ARMS+r*PITCH+g()*.5;
+  o.x=Math.cos(th)*r;o.z=Math.sin(th)*r;o.y=g()*.8;o.c=Math.random()<.2?[.35,.25,.6]:[.16,.28,.55];o.s=3+Math.random()*4;});
+const mHaze=starMat(.05,true,1); galaxy.add(new THREE.Points(haze,mHaze));
+
+// background stars (static, several depths)
+const NB=mobile?3500:8000;
+const bg=layer(NB,(i,o)=>{const u=Math.random()*2-1,p=Math.random()*6.283,q=Math.sqrt(1-u*u),r=150+Math.random()*450;
+  o.x=r*q*Math.cos(p);o.y=r*u;o.z=r*q*Math.sin(p);const k=Math.random();o.c=k<.15?[1,.8,.6]:k<.5?[.7,.8,1]:[.95,.95,1];
+  o.c=o.c.map(v=>v*(.4+Math.random()*.6));o.s=(.18+Math.pow(Math.random(),5)*.9)*(r/80);});
+const mBg=starMat(1,true,0); const bgP=new THREE.Points(bg,mBg); scene.add(bgP);
+
+// nebula backdrop
+const mNeb=new THREE.ShaderMaterial({uniforms:{uT:U.uT,uA:{value:1}},side:THREE.BackSide,depthWrite:false,
+  vertexShader:`varying vec3 vD;void main(){vD=position;gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.);}`,
+  fragmentShader:`uniform float uT,uA;varying vec3 vD;${NOISE}
+  void main(){vec3 d=normalize(vD);float f=fbm(d*2.2+uT*.002),q=fbm(d*4.6+f*1.6);float m=smoothstep(.42,.85,f*.6+q*.5);
+  vec3 c=mix(vec3(0,.012,.03),vec3(.02,.33,.48),m)*(.22+m*.85);c+=vec3(.07,.04,.12)*smoothstep(.5,.9,q)*.35;gl_FragColor=vec4(c*uA,1.);}`});
+const neb=new THREE.Mesh(new THREE.SphereGeometry(900,32,20),mNeb); neb.renderOrder=-2; scene.add(neb);
+
+// core glow
+function glowTex(stops){const k=document.createElement('canvas');k.width=k.height=128;const x=k.getContext('2d'),gr=x.createRadialGradient(64,64,0,64,64,64);
+  stops.forEach(s=>gr.addColorStop(s[0],s[1]));x.fillStyle=gr;x.fillRect(0,0,128,128);return new THREE.CanvasTexture(k);}
+const tCore=glowTex([[0,'rgba(255,245,225,1)'],[.18,'rgba(255,214,150,.55)'],[.5,'rgba(255,170,95,.12)'],[1,'rgba(255,150,80,0)']]);
+const sp=(t,s,o)=>{const m=new THREE.Sprite(new THREE.SpriteMaterial({map:t,blending:THREE.AdditiveBlending,depthWrite:false,transparent:true,opacity:o}));m.scale.set(s,s,1);return m;};
+const glowA=sp(tCore,17,.8),glowB=sp(tCore,5,1); scene.add(glowA,glowB);
+
+/* ---------- hyperspace streaks, tunnel, title particles (camera space) ---------- */
+const NW=mobile?3500:7000, wp=new Float32Array(NW*6),we=new Float32Array(NW*2),ws=new Float32Array(NW*2);
+for(let i=0;i<NW;i++){const a=Math.random()*6.283,r=.7+Math.pow(Math.random(),.8)*14,z=Math.random()*240,sd=Math.random();
+  for(let k=0;k<2;k++){wp.set([Math.cos(a)*r,Math.sin(a)*r,z],(i*2+k)*3);we[i*2+k]=k;ws[i*2+k]=sd;}}
+const wg=new THREE.BufferGeometry();
+wg.setAttribute('position',new THREE.BufferAttribute(wp,3));wg.setAttribute('aEnd',new THREE.BufferAttribute(we,1));wg.setAttribute('aSd',new THREE.BufferAttribute(ws,1));
+const mWarp=new THREE.ShaderMaterial({uniforms:{uOff:{value:0},uLen:{value:.3},uW:{value:0},uTw:{value:0}},transparent:true,depthWrite:false,depthTest:false,blending:THREE.AdditiveBlending,
+  vertexShader:`attribute float aEnd,aSd;uniform float uOff,uLen,uW,uTw;varying vec3 vC;varying float vA;
+  void main(){float z=-mod(position.z+uOff,240.),zz=z-aEnd*uLen;float ang=atan(position.y,position.x)+uTw*zz*.004,rad=length(position.xy);
+  vec3 p=vec3(cos(ang)*rad,sin(ang)*rad,zz);float dep=-z;
+  vA=uW*smoothstep(0.,6.,dep)*(1.-smoothstep(130.,240.,dep))*mix(1.,.04,aEnd);
+  vC=mix(vec3(.55,.72,1.),vec3(1.,.72,.55),step(.88,aSd))*(.55+aSd*.9);
+  gl_Position=projectionMatrix*modelViewMatrix*vec4(p,1.);}`,
+  fragmentShader:`varying vec3 vC;varying float vA;void main(){gl_FragColor=vec4(vC,vA);}`});
+const warp=new THREE.LineSegments(wg,mWarp); warp.frustumCulled=false; warp.renderOrder=6; cam.add(warp);
+
+
+const endLight=sp(glowTex([[0,'rgba(255,255,255,1)'],[.25,'rgba(190,220,255,.6)'],[1,'rgba(120,170,255,0)']]),30,0);
+endLight.position.set(0,0,-200); endLight.material.depthTest=false; endLight.renderOrder=7; cam.add(endLight);
+
+/* ---- reference-video effect: swirling flight through bokeh orbs ---- */
+const mRay=new THREE.ShaderMaterial({uniforms:{uT:{value:0},uA:{value:0},uAsp:{value:1}},transparent:true,depthWrite:false,depthTest:false,blending:THREE.AdditiveBlending,
+  vertexShader:`varying vec2 vP;void main(){vP=position.xy;gl_Position=vec4(position.xy,0.,1.);}`,
+  fragmentShader:`uniform float uT,uA,uAsp;varying vec2 vP;void main(){vec2 p=vP*vec2(uAsp,1.);float r=length(p),a=atan(p.y,p.x);
+  float st=pow(.5+.5*sin(a*22.-log(r+.05)*5.+uT*1.4),3.);
+  vec3 c=vec3(.13,.11,.19)*st*smoothstep(.05,.9,r)*(.55+.45*sin(a*3.+uT*.3))+vec3(.05,.1,.22)*exp(-r*3.)*.7;
+  gl_FragColor=vec4(c,uA);}`});
+const ray=new THREE.Mesh(new THREE.PlaneGeometry(2,2),mRay); ray.frustumCulled=false; ray.renderOrder=3; cam.add(ray);
+const NO=mobile?250:600,NT=mobile?1500:4000,NQ=NO+NT,qp=new Float32Array(NQ*3),qc=new Float32Array(NQ*3),qs=new Float32Array(NQ);
+for(let i=0;i<NQ;i++){const orb=i<NO,a=Math.random()*6.283,r=orb?1+Math.pow(Math.random(),.6)*16:Math.pow(Math.random(),1.5)*9;
+  qp.set([Math.cos(a)*r,Math.sin(a)*r,Math.random()*120],i*3);
+  qs[i]=orb?.18+Math.pow(Math.random(),2)*1.1:.02+Math.random()*.04;
+  qc.set(orb?(Math.random()<.35?[.82,.72,1]:[.72,.88,1]):[.82,.92,1],i*3);}
+const qg=new THREE.BufferGeometry();qg.setAttribute('position',new THREE.BufferAttribute(qp,3));qg.setAttribute('aCol',new THREE.BufferAttribute(qc,3));qg.setAttribute('aSize',new THREE.BufferAttribute(qs,1));
+const mOrb=new THREE.ShaderMaterial({uniforms:{uOff:{value:0},uTw:{value:0},uPx:{value:dpr},uA:{value:0}},transparent:true,depthWrite:false,depthTest:false,blending:THREE.AdditiveBlending,
+  vertexShader:`attribute vec3 aCol;attribute float aSize;uniform float uOff,uTw,uPx;varying vec3 vC;varying float vA,vS;
+  void main(){float z=-mod(position.z+uOff,120.),ang=atan(position.y,position.x)+uTw*z*.012,rad=length(position.xy);
+  vec4 mv=modelViewMatrix*vec4(cos(ang)*rad,sin(ang)*rad,z,1.);float d=-mv.z,big=step(.1,aSize);vS=big;
+  gl_PointSize=clamp(aSize*uPx*600./max(d,.3),1.,big>.5?200.:5.);vA=smoothstep(.8,3.,d)*(1.-smoothstep(80.,120.,d));vC=aCol;gl_Position=projectionMatrix*mv;}`,
+  fragmentShader:`uniform float uA;varying vec3 vC;varying float vA,vS;
+  void main(){float r=length(gl_PointCoord-.5)*2.;if(r>1.)discard;float f=mix(pow(1.-r,2.),smoothstep(1.,.3,r)*.65+smoothstep(.7,.92,r)*(1.-smoothstep(.92,1.,r))*.25,vS);
+  gl_FragColor=vec4(vC,f*vA*uA);}`});
+const orbs=new THREE.Points(qg,mOrb); orbs.frustumCulled=false; orbs.renderOrder=4; cam.add(orbs);
+warp.visible=orbs.visible=ray.visible=endLight.visible=false; // click-sequence layers unused in the loader
+
+/* ---------- state & loop ---------- */
+const s={intro:0,spin:1,dive:0,dis:0,warp:0,speed:18,tun:0,fov:60,gal:1,off:0,sw:0,sSpeed:8,sOff:0};
+const ptr={x:0,y:0,sx:0,sy:0};
+addEventListener('pointermove',e=>{ptr.x=e.clientX/innerWidth*2-1;ptr.y=e.clientY/innerHeight*2-1;});
+function onResize(){renderer.setSize(innerWidth,innerHeight,false);cam.aspect=innerWidth/innerHeight;cam.updateProjectionMatrix();}
+addEventListener('resize',onResize);
+const clock=new THREE.Clock(); let t=0;
+function frame(){
+  raf=requestAnimationFrame(frame);
+  const dt=Math.min(clock.getDelta(),.05); t+=dt;
+  U.uT.value=t; U.uSpin.value+=dt*(reduce?.03:.35)*s.spin; bgP.rotation.y=t*.008; bgP.rotation.x=t*.002; neb.rotation.y=t*.004;
+  ptr.sx+=(ptr.x-ptr.sx)*.04; ptr.sy+=(ptr.y-ptr.sy)*.04;
+  const k=1-s.dive, Rr=(55+35*Math.pow(1-s.intro,2))*Math.pow(1/55,s.dive);
+  const ang=-.45+(reduce?0:Math.sin(t*.09)*.7)+s.dive*.5;
+  cam.position.set(Math.cos(ang)*Rr+ptr.sx*3*k, 14*k+.3+Math.sin(t*.07)*2*k-ptr.sy*2*k, Math.sin(ang)*Rr);
+  cam.lookAt(0,0,0);
+  if(cam.fov!==s.fov){cam.fov=s.fov;cam.updateProjectionMatrix();}
+  s.off+=dt*s.speed;
+  mStars.uniforms.uAlpha.value=s.gal; mDust.uniforms.uAlpha.value=.15*s.gal; mHaze.uniforms.uAlpha.value=.05*s.gal; mNeb.uniforms.uA.value=s.gal;
+  glowA.material.opacity=.8*s.gal; glowB.material.opacity=s.gal;
+  const bright=1+s.dive*2; glowB.scale.setScalar(5*bright*bright);
+  mWarp.uniforms.uOff.value=s.off; mWarp.uniforms.uLen.value=.3+s.speed*.17; mWarp.uniforms.uW.value=s.warp; mWarp.uniforms.uTw.value=s.warp*.8;
+  s.sOff+=dt*s.sSpeed; mOrb.uniforms.uOff.value=s.sOff; mOrb.uniforms.uTw.value=s.sw; mOrb.uniforms.uA.value=s.sw;
+  mRay.uniforms.uT.value=t; mRay.uniforms.uA.value=s.sw; mRay.uniforms.uAsp.value=cam.aspect;
+  endLight.material.opacity=s.tun; endLight.scale.setScalar(30+s.tun*150);
+  renderer.render(scene,cam);
+}
+frame(); ready=true;
+requestAnimationFrame(()=>canvas.classList.add('on'));
+
+/* ---------- loader: 0 → 100 in 5 s over the revolving galaxy, then index.html ---------- */
+const LOAD_MS=5000;
+function startLoader(){
+  const pct=$('pct'),fill=$('fill'); let t0=null;
+  function step(now){
+    if(cleaned)return; if(t0===null)t0=now;
+    const p=Math.min((now-t0)/LOAD_MS,1),n=Math.round(p*100);
+    pct.textContent=n; fill.style.width=n+'%';
+    if(p<1){requestAnimationFrame(step);return;}
+    busy=true; flash.style.transition='opacity .5s ease'; flash.style.opacity=1; setTimeout(go,550);
+  }
+  requestAnimationFrame(step);
+}
+if(reduce){ s.intro=1; ui.style.opacity=1; }
+else{
+  gsap.to(s,{intro:1,duration:3,ease:'power2.out'});
+  gsap.to(s,{dive:.22,duration:5.2,ease:'power1.inOut'});   // slow push toward the core
+  gsap.to(s,{spin:2.5,duration:5,ease:'power2.in'});        // galaxy gently accelerates
+  gsap.fromTo(ui,{opacity:0,scale:1.04},{opacity:1,scale:1,duration:1.2,delay:.2,ease:'power2.out'});
+}
+startLoader();
+
+
+function cleanup(){
+  cancelAnimationFrame(raf); if(tl)tl.kill();
+  removeEventListener('resize',onResize);
+  scene.traverse(o=>{ if(o.geometry)o.geometry.dispose(); if(o.material){ if(o.material.map)o.material.map.dispose(); o.material.dispose(); } });
+  cam.traverse(o=>{ if(o.geometry)o.geometry.dispose(); if(o.material)o.material.dispose(); });
+  renderer.dispose();
+}
+addEventListener('pagehide',()=>{ if(!cleaned){cleaned=true;cleanup();} });
+})();
+</script>
+</body>
+</html>
